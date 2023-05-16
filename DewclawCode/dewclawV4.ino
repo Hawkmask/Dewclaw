@@ -1,6 +1,6 @@
 #include <Servo.h>
 #include <Adafruit_NeoPixel.h>
-#include <CapacitiveSensor.h>
+
 
 #define NEOPIN        3
 // input pin Neopixel is attached to
@@ -26,9 +26,9 @@
 // input pin scale potentiometer
 #define FLX1       A5
 // input pin flexion amp 1
-#define EXT1       A6
+#define EXT1       A4
 // input pin extension amp 1
-#define FLX2       A4
+#define FLX2       A2
 // input pin flexion amp 2
 #define EXT2       A3
 // input pin extension amp 2
@@ -47,16 +47,21 @@ int   oldVal2;
 int   muscle2;
 float current1;
 int   freq;
-int deadband;
-int scaler1;
-int scaler2;
+int deadband=1;
+float scaler1=1;
+float scaler2=1;
 int brightness;
 int rate=1000;
 int count=0;
 
 class CircularBuffer {
 public:
-  CircularBuffer(int size) : size(size), numElements(0), index(0), sum(0), sumOfSquares(0), buffer(new double[size]) {}
+  CircularBuffer(int size) : size(size), numElements(0), index(0), sum(0), sumOfSquares(0), buffer(new double[size]) {
+    for(int i=0; i<size; i++){
+      buffer[i]=0;
+      }
+    }
+
 
   void add(double value) {
     if (numElements < size) numElements++;
@@ -68,7 +73,7 @@ public:
     index = (index + 1) % size;
   }
 
-  double getAverage() { return sum / numElements; }
+  double getAverage() { return (sum / numElements); }
 
 
   double getStandardDeviation() {
@@ -116,22 +121,28 @@ private:
   double* buffer;
 };
 double output=0;
+double input1[5]={0};
+double input2[5]={0};
 double old=0;
+double in1Max=0;
+double in1Min=1000;
+
+double combined=0;
 CircularBuffer buffer1(10); // Create a buffer of size 10
-CircularBuffer buffer2(20); // Create a buffer of size 20
+CircularBuffer buffer2(10); // Create a buffer of size 10
 Adafruit_NeoPixel pixels(NUMPIXELS, NEOPIN, NEO_GRB + NEO_KHZ800);
 //Servo servo1;
 
 void setup() {
-    //pinMode(SCALE, INPUT);
-    //pinMode(FLX1, INPUT);
-    pinMode(FLX2, INPUT);
-    //pinMode(SCMOD, INPUT);
-    //pinMode(SC1, INPUT);
-    //pinMode(SC2, INPUT);
+    pinMode(SCALE, INPUT);
+    pinMode(EXT1, INPUT);
+    pinMode(FLX1, INPUT);
+    pinMode(SCMOD, INPUT);
+    pinMode(SC1, INPUT);
+    pinMode(SC2, INPUT);
     //pinMode(NOSRV, INPUT);
     Serial.begin(9600);
-    //pixels.begin();
+    pixels.begin();
 }
 
 void loop()
@@ -139,9 +150,11 @@ void loop()
     while (digitalRead(SCMOD) == HIGH) {
         int analogValue = analogRead(SCALE);
         if (!digitalRead(SC1) && digitalRead(SC2)) {
-          scaler1 = map(analogValue, 0, 1023, 0, 10);
+          scaler1 = map(analogValue, 0, 1023, .5, 50);
+          Serial.println(scaler1);
         } else if (digitalRead(SC1) && !digitalRead(SC2)) {
-          scaler2 = map(analogValue, 0, 1023, 0, 10);
+          scaler2 = map(analogValue, 0, 1023, .5, 50);
+          Serial.println(scaler2);
         } else if (digitalRead(SC1) && digitalRead(SC2)) {
           deadband = map(analogValue, 0, 1023, 0, 10);
         } else if (!digitalRead(SC1) && !digitalRead(SC2)){
@@ -151,18 +164,33 @@ void loop()
         pixels.setBrightness(brightness);
         
     }
-  double input1 =analogRead(FLX2);
-  buffer1.add(input1);
-  double avg = buffer1.getAverage();
-  buffer2.add(avg);
-  
-  double avg2 = buffer2.getAverage();
-  //old = output;
-  //output=constrain((old+avg*scaler1-avg2*scaler2),0,180);
-  Serial.println(avg2); 
-  Serial.print(", ");
-  Serial.println(input1); 
-    
+
+  double sum1=0;
+  double inavg1=0;
+  double sum2=0;
+  double inavg2=0;
+  double in1=0;
+  double in2=0;
+  for (int i=0;i<5;i++){
+    for(int j=0;j<2;j++){
+     in1+=analogRead(EXT1);
+     in2+=analogRead(FLX1);
+    }
+    input1[i]=abs(analogRead(EXT1)-(in1/2));
+    input2[i]=abs(analogRead(FLX1)-(in2/2));
+    sum1+=input1[i];
+    sum2+=input2[i];
+    in1=0;
+    in2=0;
+    }
+   inavg1=sum1/5;
+   inavg2=sum2/5;
+   buffer1.add(analogRead(FLX1));
+   buffer2.add(analogRead(EXT1));
+   double added=abs(analogRead(FLX1)-buffer1.getAverage())-abs(analogRead(EXT1)-buffer2.getAverage());
+   combined=old+added;
+   old=combined;
+   Serial.println(combined);
 
 }
 
